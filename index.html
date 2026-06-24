@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Comptage Caisse — La Marmite Bleue</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🦪</text></svg>">
+
+<!-- ============================================================ -->
+<!-- STYLES -->
+<!-- ============================================================ -->
+<style>
+:root{
+  --terracotta:#C1502E;
+  --terracotta-dark:#9c3f23;
+  --ivoire:#F7F2EA;
+  --ivoire-dark:#EDE6D8;
+  --teal:#1F5C5A;
+  --teal-dark:#163f3e;
+  --teal-light:#2d7d7a;
+  --ink:#2A2521;
+  --ink-soft:#6b6258;
+  --ecart-ok:#2d7d4f;
+  --ecart-warn:#c19a2e;
+  --ecart-bad:#b6402f;
+  --border:#E2D9C8;
+  --radius:14px;
+  --shadow:0 2px 10px rgba(42,37,33,0.08);
+  --shadow-lg:0 8px 28px rgba(42,37,33,0.14);
+}
+
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+body{margin:0;}
+
+html,body{
+  font-family:'Figtree',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  background:var(--ivoire);
+  color:var(--ink);
+  min-height:100vh;
+}
+
+@font-face{font-family:'Figtree';src:local('Figtree');}
+
+h1,h2,h3{
+  font-family:'Cormorant',Georgia,serif;
+  margin:0;
+  color:var(--teal-dark);
+  letter-spacing:.2px;
+}
+
+#app{
+  max-width:560px;
+  margin:0 auto;
+  min-height:100vh;
+  display:flex;
+  flex-direction:column;
+  position:relative;
+}
+
+/* ---------- HEADER ---------- */
+.topbar{
+  background:var(--teal-dark);
+  color:var(--ivoire);
+  padding:16px 18px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  position:sticky;
+  top:0;
+  z-index:50;
+  box-shadow:var(--shadow);
+}
+.topbar h1{
+  color:#fff;
+  font-size:20px;
+  font-weight:600;
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.topbar .sub{
+  font-size:11px;
+  color:#bcd6d4;
+  font-family:'Figtree',sans-serif;
+  margin-top:1px;
+}
+.btn-icon{
+  background:rgba(255,255,255,0.12);
+  border:none;
+  color:#fff;
+  width:38px;
+  height:38px;
+  border-radius:10px;
+  font-size:18px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+}
+.btn-icon:active{background:rgba(255,255,255,0.25);}
+
+.sync-pill{
+  font-size:10px;
+  padding:3px 9px;
+  border-radius:20px;
+  background:rgba(255,255,255,0.1);
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  color:#cfe3e1;
+}
+.sync-dot{width:7px;height:7px;border-radius:50%;background:#7bd99a;}
+.sync-dot.off{background:#e08a7a;}
+.sync-dot.busy{background:#e0c97a;animation:pulse 1s infinite;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* ---------- MAIN CONTENT ---------- */
+#screen{
+  flex:1;
+  padding:16px 16px 100px;
+}
+
+.card{
+  background:#fff;
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:18px;
+  margin-bottom:14px;
+  box-shadow:var(--shadow);
+}
+
+.card-title{
+  font-size:13px;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.6px;
+  color:var(--teal);
+  margin-bottom:12px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+}
+
+/* ---------- BUTTONS ---------- */
+.btn{
+  border:none;
+  border-radius:10px;
+  padding:13px 18px;
+  font-size:15px;
+  font-weight:600;
+  font-family:'Figtree',sans-serif;
+  cursor:pointer;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  transition:transform .08s, opacity .15s;
+}
+.btn:active{transform:scale(0.97);}
+.btn-primary{background:var(--terracotta); color:#fff; width:100%;}
+.btn-primary:active{background:var(--terracotta-dark);}
+.btn-secondary{background:var(--ivoire-dark); color:var(--teal-dark); width:100%;}
+.btn-ghost{background:transparent; color:var(--teal); border:1.5px solid var(--teal); width:100%;}
+.btn-danger{background:transparent; color:var(--ecart-bad); border:1.5px solid var(--ecart-bad);}
+.btn-sm{padding:8px 14px; font-size:13px; width:auto;}
+.btn:disabled{opacity:.45; cursor:not-allowed;}
+.btn-full-row{display:flex; gap:10px;}
+
+/* ---------- FORM ELEMENTS ---------- */
+label{
+  font-size:12.5px;
+  font-weight:600;
+  color:var(--ink-soft);
+  display:block;
+  margin-bottom:6px;
+}
+input[type=text], input[type=number], select, textarea{
+  width:100%;
+  padding:12px 13px;
+  border:1.5px solid var(--border);
+  border-radius:10px;
+  font-size:16px;
+  font-family:'Figtree',sans-serif;
+  background:#fff;
+  color:var(--ink);
+  margin-bottom:14px;
+}
+input:focus, select:focus, textarea:focus{
+  outline:none;
+  border-color:var(--teal-light);
+}
+input[type=number]{text-align:right; font-weight:600;}
+
+.field-row{display:flex; gap:10px;}
+.field-row > div{flex:1;}
+
+/* ---------- DENOMINATION GRID ---------- */
+.denom-section-label{
+  font-size:11px;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.8px;
+  color:var(--ink-soft);
+  margin:16px 0 8px;
+  padding-bottom:6px;
+  border-bottom:1px solid var(--border);
+}
+.denom-section-label:first-child{margin-top:0;}
+.denom-row{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:7px 0;
+}
+.denom-label{
+  width:64px;
+  flex-shrink:0;
+  font-weight:700;
+  font-size:15px;
+  color:var(--teal-dark);
+}
+.denom-qty{
+  flex:1;
+}
+.denom-qty input{
+  margin-bottom:0;
+  text-align:center;
+  padding:10px 8px;
+}
+.denom-eq{
+  width:14px;
+  text-align:center;
+  color:var(--ink-soft);
+  flex-shrink:0;
+}
+.denom-total{
+  width:76px;
+  text-align:right;
+  flex-shrink:0;
+  font-weight:700;
+  font-size:14.5px;
+  color:var(--ink);
+}
+
+.stepper{
+  display:flex;
+  align-items:center;
+  border:1.5px solid var(--border);
+  border-radius:10px;
+  overflow:hidden;
+  background:#fff;
+}
+.stepper button{
+  width:34px;
+  height:40px;
+  border:none;
+  background:var(--ivoire-dark);
+  color:var(--teal-dark);
+  font-size:18px;
+  font-weight:700;
+  cursor:pointer;
+  flex-shrink:0;
+}
+.stepper button:active{background:var(--border);}
+.stepper input{
+  border:none;
+  flex:1;
+  width:100%;
+  text-align:center;
+  font-weight:700;
+  padding:10px 2px;
+}
+.stepper input:focus{outline:none;}
+
+/* ---------- TOTAL BANNER ---------- */
+.total-banner{
+  background:var(--teal-dark);
+  color:#fff;
+  border-radius:var(--radius);
+  padding:18px;
+  margin-bottom:14px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+}
+.total-banner .lbl{font-size:12px; color:#bcd6d4; text-transform:uppercase; letter-spacing:.6px; font-weight:600;}
+.total-banner .val{font-family:'Cormorant',serif; font-size:30px; font-weight:700; color:#fff;}
+
+/* ---------- ECART ---------- */
+.ecart-box{
+  border-radius:var(--radius);
+  padding:16px 18px;
+  margin-bottom:14px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  border:1.5px solid;
+}
+.ecart-box.ok{background:#eef6ef; border-color:var(--ecart-ok);}
+.ecart-box.warn{background:#fbf3e1; border-color:var(--ecart-warn);}
+.ecart-box.bad{background:#fbece9; border-color:var(--ecart-bad);}
+.ecart-box .lbl{font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.5px;}
+.ecart-box.ok .lbl, .ecart-box.ok .val{color:var(--ecart-ok);}
+.ecart-box.warn .lbl, .ecart-box.warn .val{color:var(--ecart-warn);}
+.ecart-box.bad .lbl, .ecart-box.bad .val{color:var(--ecart-bad);}
+.ecart-box .val{font-family:'Cormorant',serif; font-size:26px; font-weight:700;}
+
+/* ---------- BOTTOM NAV ---------- */
+.bottom-nav{
+  position:fixed;
+  bottom:0;
+  left:0;
+  right:0;
+  background:#fff;
+  border-top:1px solid var(--border);
+  display:flex;
+  max-width:560px;
+  margin:0 auto;
+  box-shadow:0 -4px 16px rgba(0,0,0,0.06);
+  z-index:50;
+  padding-bottom:env(safe-area-inset-bottom);
+}
+.nav-item{
+  flex:1;
+  padding:10px 4px 8px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:3px;
+  background:none;
+  border:none;
+  color:var(--ink-soft);
+  cursor:pointer;
+  font-family:'Figtree',sans-serif;
+}
+.nav-item.active{color:var(--terracotta);}
+.nav-item .ic{font-size:20px;}
+.nav-item .lb{font-size:10.5px; font-weight:700;}
+
+/* ---------- LISTS / HISTORY ---------- */
+.hist-item{
+  background:#fff;
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:14px 16px;
+  margin-bottom:10px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  cursor:pointer;
+}
+.hist-item:active{background:var(--ivoire-dark);}
+.hist-main{display:flex; flex-direction:column; gap:3px;}
+.hist-titre{font-weight:700; font-size:14.5px; color:var(--ink);}
+.hist-meta{font-size:12px; color:var(--ink-soft);}
+.hist-right{text-align:right;}
+.hist-montant{font-weight:700; font-size:15px; font-family:'Cormorant',serif; font-size:19px;}
+.hist-badge{
+  font-size:10.5px;
+  font-weight:700;
+  padding:2px 8px;
+  border-radius:20px;
+  margin-top:4px;
+  display:inline-block;
+}
+.hist-badge.ok{background:#eef6ef; color:var(--ecart-ok);}
+.hist-badge.warn{background:#fbf3e1; color:var(--ecart-warn);}
+.hist-badge.bad{background:#fbece9; color:var(--ecart-bad);}
+
+.empty-state{
+  text-align:center;
+  padding:50px 20px;
+  color:var(--ink-soft);
+}
+.empty-state .ic{font-size:42px; margin-bottom:10px; opacity:.5;}
+.empty-state p{font-size:14px; margin:4px 0;}
+
+.filter-bar{
+  display:flex;
+  gap:8px;
+  overflow-x:auto;
+  padding-bottom:4px;
+  margin-bottom:14px;
+}
+.filter-chip{
+  flex-shrink:0;
+  padding:7px 14px;
+  border-radius:20px;
+  border:1.5px solid var(--border);
+  background:#fff;
+  font-size:12.5px;
+  font-weight:600;
+  color:var(--ink-soft);
+  cursor:pointer;
+  white-space:nowrap;
+}
+.filter-chip.active{background:var(--teal-dark); color:#fff; border-color:var(--teal-dark);}
+
+/* ---------- MODAL ---------- */
+.modal-overlay{
+  position:fixed;
+  inset:0;
+  background:rgba(42,37,33,0.5);
+  z-index:200;
+  display:flex;
+  align-items:flex-end;
+  justify-content:center;
+}
+.modal-overlay.center{align-items:center; padding:20px;}
+.modal-sheet{
+  background:#fff;
+  width:100%;
+  max-width:560px;
+  border-radius:20px 20px 0 0;
+  padding:22px 18px calc(22px + env(safe-area-inset-bottom));
+  max-height:88vh;
+  overflow-y:auto;
+}
+.modal-overlay.center .modal-sheet{
+  border-radius:18px;
+  max-height:80vh;
+}
+.modal-handle{
+  width:40px; height:4px;
+  background:var(--border);
+  border-radius:4px;
+  margin:0 auto 16px;
+}
+.modal-title{
+  font-family:'Cormorant',serif;
+  font-size:21px;
+  font-weight:700;
+  color:var(--teal-dark);
+  margin-bottom:16px;
+}
+
+/* ---------- TOAST ---------- */
+#toast{
+  position:fixed;
+  bottom:90px;
+  left:50%;
+  transform:translateX(-50%) translateY(20px);
+  background:var(--ink);
+  color:#fff;
+  padding:11px 20px;
+  border-radius:30px;
+  font-size:13.5px;
+  font-weight:600;
+  z-index:300;
+  opacity:0;
+  transition:all .25s;
+  pointer-events:none;
+  max-width:90%;
+  text-align:center;
+  box-shadow:var(--shadow-lg);
+}
+#toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+#toast.err{background:var(--ecart-bad);}
+
+/* ---------- MISC ---------- */
+.divider-text{
+  text-align:center;
+  color:var(--ink-soft);
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:1px;
+  margin:18px 0 10px;
+  font-weight:700;
+}
+.helper-text{font-size:12px; color:var(--ink-soft); margin-top:-8px; margin-bottom:14px;}
+.section-gap{height:6px;}
+a.link-btn{color:var(--teal); font-size:13px; font-weight:600; text-decoration:none;}
+
+textarea{resize:vertical; min-height:60px;}
+
+.grid-2{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+
+.loader{
+  border:3px solid var(--border);
+  border-top-color:var(--terracotta);
+  border-radius:50%;
+  width:30px;height:30px;
+  animation:spin 0.8s linear infinite;
+  margin:30px auto;
+}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+::-webkit-scrollbar{width:0;height:0;}
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ============================================================ -->
+  <!-- TOPBAR -->
+  <!-- ============================================================ -->
+  <div class="topbar">
+    <div>
+      <h1>🦪 Comptage Caisse</h1>
+      <div class="sub" id="topbarSub">La Marmite Bleue</div>
+    </div>
+    <div style="display:flex; align-items:center; gap:8px;">
+      <span class="sync-pill" id="syncPill"><span class="sync-dot off" id="syncDot"></span><span id="syncText">hors ligne</span></span>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- SCREEN (contenu dynamique injecté en JS) -->
+  <!-- ============================================================ -->
+  <div id="screen">
+    <div class="loader"></div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- BOTTOM NAV -->
+  <!-- ============================================================ -->
+  <div class="bottom-nav">
+    <button class="nav-item" id="navNouveau" onclick="Nav.go('nouveau')">
+      <span class="ic">➕</span><span class="lb">Nouveau</span>
+    </button>
+    <button class="nav-item" id="navHistorique" onclick="Nav.go('historique')">
+      <span class="ic">📋</span><span class="lb">Historique</span>
+    </button>
+    <button class="nav-item" id="navStats" onclick="Nav.go('stats')">
+      <span class="ic">📊</span><span class="lb">Stats</span>
+    </button>
+    <button class="nav-item" id="navReglages" onclick="Nav.go('reglages')">
+      <span class="ic">⚙️</span><span class="lb">Réglages</span>
+    </button>
+  </div>
+
+</div>
+
+<div id="toast"></div>
+
+<!-- ============================================================ -->
+<!-- FIREBASE SDK (compat, pour éviter les soucis de scope onclick) -->
+<!-- ============================================================ -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+
+<script src="app.js"></script>
+</body>
+</html>
