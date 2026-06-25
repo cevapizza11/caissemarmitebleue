@@ -89,6 +89,7 @@ const State = {
   comptages: [],       // chargés depuis Firestore
   tickets: [],          // chargés depuis Firestore (tickets de vente)
   petiteCaisse: [],      // chargés depuis Firestore (sorties d'argent petite caisse)
+  ticketsEnAttente: [],   // tickets saisis hors-ligne, en attente de synchronisation
   historyFilter: { caisse: 'toutes', periode: '30j' },
   draft: null,         // comptage en cours de saisie
   editingHistId: null,
@@ -105,6 +106,7 @@ const State = {
 };
 
 const SESSION_KEY = 'caisseMarmiteEmployeActif';
+const QUEUE_KEY = 'caisseMarmiteFileTicketsEnAttente';
 
 function nouveauDraft() {
   const denomQte = {};
@@ -260,12 +262,15 @@ const Nav = {
     if (screen === 'nouveau' && State.currentScreen !== 'nouveau') {
       State.draft = nouveauDraft();
     }
-    if (screen === 'tickets' && !State.ticketContexte) {
-      State.ticketContexte = {
-        caisse: State.caisses[0] || "Caisse 1",
-        service: State.services[0] || "Service midi",
-        date: new Date().toISOString().slice(0,10)
-      };
+    if (screen === 'tickets') {
+      if (!State.ticketContexte) {
+        State.ticketContexte = {
+          caisse: State.caisses[0] || "Caisse 1",
+          service: State.services[0] || "Service midi",
+          date: new Date().toISOString().slice(0,10)
+        };
+      }
+      if (State.ticketsEnAttente.length > 0) FileAttente.tenterSynchronisation();
     }
     if (screen === 'petitecaisse' && !State.petiteCaisseDraft) {
       State.petiteCaisseDraft = nouveauPetiteCaisseDraft();
@@ -442,14 +447,85 @@ function toast(msg, isErr) {
 /* ================================================================
    SECTION 6 — SYNC FIRESTORE
    ================================================================ */
+/* ================================================================
+   SECTION 6B — FILE D'ATTENTE LOCALE (tickets saisis hors-ligne)
+   ================================================================ */
+const FileAttente = {
+  charger() {
+    try {
+      const brut = localStorage.getItem(QUEUE_KEY);
+      State.ticketsEnAttente = brut ? JSON.parse(brut) : [];
+    } catch (e) {
+      State.ticketsEnAttente = [];
+    }
+  },
+
+  sauvegarderLocal() {
+    try {
+      localStorage.setItem(QUEUE_KEY, JSON.stringify(State.ticketsEnAttente));
+    } catch (e) {
+      console.error("Erreur écriture file d'attente locale :", e);
+    }
+  },
+
+  ajouter(ticketPayload) {
+    const enAttente = {
+      idLocal: 'local_' + Date.now() + '_' + Math.random().toString(36).slice(2,8),
+      payload: ticketPayload
+    };
+    State.ticketsEnAttente.push(enAttente);
+    this.sauvegarderLocal();
+    return enAttente;
+  },
+
+  retirer(idLocal) {
+    State.ticketsEnAttente = State.ticketsEnAttente.filter(t => t.idLocal !== idLocal);
+    this.sauvegarderLocal();
+  },
+
+  // Tente d'envoyer tous les tickets en attente vers Firestore. Appelé
+  // automatiquement à chaque retour de connexion et au démarrage de l'app.
+  async tenterSynchronisation() {
+    if (!firebaseReady || State.ticketsEnAttente.length === 0) return;
+    Sync.setStatus('busy');
+    const enAttenteCopie = [...State.ticketsEnAttente];
+    let nbReussis = 0;
+    for (const item of enAttenteCopie) {
+      try {
+        const ref = await db.collection(TICKETS_COLLECTION).add(item.payload);
+        // Remplace l'entrée locale par la vraie entrée Firestore dans la liste affichée
+        const idx = State.tickets.findIndex(t => t.id === item.idLocal);
+        if (idx >= 0) State.tickets[idx] = { id: ref.id, ...item.payload };
+        this.retirer(item.idLocal);
+        nbReussis++;
+      } catch (e) {
+        console.error("Échec sync ticket en attente :", e);
+        // On arrête la boucle dès le premier échec : si le réseau est de nouveau
+        // coupé, inutile d'essayer les suivants, on retentera plus tard.
+        break;
+      }
+    }
+    if (nbReussis > 0) {
+      toast(nbReussis + " ticket" + (nbReussis>1?'s':'') + " synchronisé" + (nbReussis>1?'s':'') + " ✓");
+      Render.screen();
+    }
+    Sync.setStatus(State.ticketsEnAttente.length > 0 ? 'attente' : 'ok');
+  }
+};
+
 const Sync = {
   setStatus(state) {
-    // state: 'ok' | 'busy' | 'off'
+    // state: 'ok' | 'busy' | 'off' | 'attente'
     const dot = document.getElementById('syncDot');
     const txt = document.getElementById('syncText');
     if (!dot || !txt) return;
-    dot.className = 'sync-dot ' + (state === 'ok' ? '' : state);
-    txt.textContent = state === 'ok' ? 'synchronisé' : state === 'busy' ? 'sync...' : 'hors ligne';
+    const nbAttente = State.ticketsEnAttente ? State.ticketsEnAttente.length : 0;
+    if (state === 'ok' && nbAttente > 0) state = 'attente';
+    dot.className = 'sync-dot ' + (state === 'ok' ? '' : state === 'attente' ? 'busy' : state);
+    txt.textContent = state === 'ok' ? 'synchronisé'
+      : state === 'busy' ? 'sync...'
+      : state === 'attente' ? nbAttente + ' en attente'
+      : 'hors ligne';
   },
 
   async chargerComptages() {
@@ -542,32 +618,53 @@ const Sync = {
   },
 
   async sauvegarderTicket(ticket) {
-    if (!firebaseReady) { toast("Pas de connexion — ticket non sauvegardé", true); return false; }
+    const payload = {
+      date: ticket.date,
+      heure: ticket.heure,
+      caisse: ticket.caisse,
+      service: ticket.service,
+      mode: ticket.mode,
+      montant: Math.round(parseFloat(ticket.montant) * 100) / 100,
+      employe: ticket.employe || "Non renseigné",
+      createdAt: Date.now()
+    };
+
+    // Si Firebase n'est même pas initialisé (config absente), on bascule
+    // directement en file d'attente locale plutôt que de perdre la saisie.
+    if (!firebaseReady) {
+      const enAttente = FileAttente.ajouter(payload);
+      State.tickets.unshift({ id: enAttente.idLocal, ...payload, _enAttente: true });
+      this.setStatus('attente');
+      return 'attente';
+    }
+
     this.setStatus('busy');
     try {
-      const payload = {
-        date: ticket.date,
-        heure: ticket.heure,
-        caisse: ticket.caisse,
-        service: ticket.service,
-        mode: ticket.mode,        // 'especes' ou 'cb'
-        montant: Math.round(parseFloat(ticket.montant) * 100) / 100,
-        employe: ticket.employe || "Non renseigné",
-        createdAt: Date.now()
-      };
       const ref = await db.collection(TICKETS_COLLECTION).add(payload);
       State.tickets.unshift({ id: ref.id, ...payload });
       this.setStatus('ok');
-      return true;
+      return 'ok';
     } catch (e) {
-      console.error("Erreur sauvegarde ticket :", e);
-      this.setStatus('off');
-      toast("Erreur lors de la sauvegarde du ticket", true);
-      return false;
+      // Échec réseau (et non une erreur de données) : on conserve le ticket
+      // localement plutôt que de le perdre, et on retentera dès que la
+      // connexion reviendra.
+      console.error("Erreur sauvegarde ticket, mise en file d'attente locale :", e);
+      const enAttente = FileAttente.ajouter(payload);
+      State.tickets.unshift({ id: enAttente.idLocal, ...payload, _enAttente: true });
+      this.setStatus('attente');
+      return 'attente';
     }
   },
 
   async supprimerTicket(id) {
+    // Ticket encore en file d'attente locale (jamais envoyé à Firestore) :
+    // suppression purement locale, pas d'appel réseau nécessaire.
+    if (typeof id === 'string' && id.startsWith('local_')) {
+      FileAttente.retirer(id);
+      State.tickets = State.tickets.filter(t => t.id !== id);
+      this.setStatus(State.ticketsEnAttente.length > 0 ? 'attente' : 'ok');
+      return true;
+    }
     if (!firebaseReady) return false;
     this.setStatus('busy');
     try {
@@ -972,14 +1069,18 @@ function renderEcranTickets() {
       <p>Aucun ticket saisi pour ce service.</p>
     </div>` : ticketsJour.map(t => {
       const info = modeInfo(t.mode);
+      const badgeAttente = t._enAttente ? `<span class="hist-badge warn">⏳ en attente</span>` : '';
       return `
-      <div class="hist-item" style="cursor:default;">
+      <div class="hist-item" style="cursor:default; ${t._enAttente ? 'border-color:var(--ecart-warn); border-style:dashed;' : ''}">
         <div class="hist-main">
           <div class="hist-titre">${info.icone} ${info.label}</div>
           <div class="hist-meta">${t.heure || ''}${t.employe ? ' · ' + t.employe : ''}</div>
         </div>
         <div class="hist-right" style="display:flex; align-items:center; gap:10px;">
-          <div class="hist-montant">${formatMontant(t.montant)}</div>
+          <div>
+            <div class="hist-montant">${formatMontant(t.montant)}</div>
+            ${badgeAttente}
+          </div>
           <button class="btn-icon" style="background:var(--ivoire-dark); color:var(--ecart-bad);" onclick="Tickets.supprimer('${t.id}')">✕</button>
         </div>
       </div>`;
@@ -1078,9 +1179,13 @@ const Tickets = {
       montant: montant,
       employe: State.employeActif ? State.employeActif.nom : ""
     };
-    const ok = await Sync.sauvegarderTicket(ticket);
-    if (ok) {
+    const resultat = await Sync.sauvegarderTicket(ticket);
+    if (resultat === 'ok') {
       toast(modeInfo(mode).label + " — " + formatMontant(montant) + " enregistré");
+      State.ticketMontantSaisie = "";
+      Render.screen();
+    } else if (resultat === 'attente') {
+      toast(modeInfo(mode).label + " — " + formatMontant(montant) + " conservé hors-ligne, sera synchronisé automatiquement", true);
       State.ticketMontantSaisie = "";
       Render.screen();
     }
@@ -2256,6 +2361,9 @@ async function initApp() {
   State.draft = nouveauDraft();
   Nav.updateActiveTab('nouveau');
 
+  // Charge la file d'attente locale avant tout (disponible même hors-ligne)
+  FileAttente.charger();
+
   // Affiche l'écran de saisie immédiatement (utilisable hors-ligne)
   Render.screen();
 
@@ -2267,7 +2375,17 @@ async function initApp() {
   await Sync.chargerTickets();
   await Sync.chargerPetiteCaisse();
 
+  // Réinjecte les tickets en attente (non encore dans Firestore) en tête de
+  // liste, pour qu'ils restent visibles même après le rechargement depuis le serveur.
+  State.ticketsEnAttente.forEach(item => {
+    State.tickets.unshift({ id: item.idLocal, ...item.payload, _enAttente: true });
+  });
+
   if (State.currentScreen === 'nouveau') Render.screen();
+
+  // Tente une synchronisation immédiate des tickets en attente (au cas où
+  // la connexion serait déjà disponible depuis le dernier passage hors-ligne)
+  FileAttente.tenterSynchronisation();
 
   // Demande la connexion si personne n'est identifié sur cet appareil
   if (State.employes.length > 0 && !Auth.restaurerSession()) {
@@ -2279,6 +2397,15 @@ async function initApp() {
     Render.screen();
   } else {
     Nav.updateActiveTab(State.currentScreen);
+  }
+
+  // Réécoute les changements de connectivité du navigateur pour resynchroniser
+  // automatiquement dès que le réseau revient, sans attendre une action de l'utilisateur.
+  if (typeof window !== 'undefined' && window.addEventListener) {
+    window.addEventListener('online', () => {
+      toast("Connexion rétablie — synchronisation en cours...");
+      FileAttente.tenterSynchronisation();
+    });
   }
 }
 
