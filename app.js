@@ -450,6 +450,22 @@ function toast(msg, isErr) {
 /* ================================================================
    SECTION 6B — FILE D'ATTENTE LOCALE (tickets saisis hors-ligne)
    ================================================================ */
+// Enveloppe une promesse avec un délai maximal. Nécessaire car le SDK
+// Firestore, avec la persistance hors-ligne activée, NE REJETTE PAS et NE
+// RÉSOUT PAS une promesse d'écriture (add/set/update) tant que la connexion
+// n'est pas revenue — elle reste indéfiniment en attente. Sans ce timeout,
+// le code resterait bloqué sur le `await` sans jamais basculer en file
+// d'attente locale, donnant l'impression que rien ne se passe.
+function avecTimeout(promesse, ms) {
+  return new Promise((resolve, reject) => {
+    const minuteur = setTimeout(() => reject(new Error('timeout')), ms);
+    promesse.then(
+      (val) => { clearTimeout(minuteur); resolve(val); },
+      (err) => { clearTimeout(minuteur); reject(err); }
+    );
+  });
+}
+
 const FileAttente = {
   charger() {
     try {
@@ -469,9 +485,13 @@ const FileAttente = {
   },
 
   ajouter(ticketPayload) {
+    const idLocal = 'local_' + Date.now() + '_' + Math.random().toString(36).slice(2,8);
     const enAttente = {
-      idLocal: 'local_' + Date.now() + '_' + Math.random().toString(36).slice(2,8),
-      payload: ticketPayload
+      idLocal: idLocal,
+      // _idClient voyage avec le document dans Firestore : permet en théorie
+      // de repérer un doublon si une écriture en timeout réussit malgré tout
+      // plus tard pendant qu'une nouvelle tentative est aussi en cours.
+      payload: { ...ticketPayload, _idClient: idLocal }
     };
     State.ticketsEnAttente.push(enAttente);
     this.sauvegarderLocal();
@@ -492,14 +512,17 @@ const FileAttente = {
     let nbReussis = 0;
     for (const item of enAttenteCopie) {
       try {
-        const ref = await db.collection(TICKETS_COLLECTION).add(item.payload);
+        // Timeout de sécurité : si le réseau est encore coupé (faux positif
+        // de l'événement "online", ou coupure entre deux tickets de la file),
+        // on ne reste pas bloqué indéfiniment sur cette tentative.
+        const ref = await avecTimeout(db.collection(TICKETS_COLLECTION).add(item.payload), 6000);
         // Remplace l'entrée locale par la vraie entrée Firestore dans la liste affichée
         const idx = State.tickets.findIndex(t => t.id === item.idLocal);
         if (idx >= 0) State.tickets[idx] = { id: ref.id, ...item.payload };
         this.retirer(item.idLocal);
         nbReussis++;
       } catch (e) {
-        console.error("Échec sync ticket en attente :", e);
+        console.error("Échec ou timeout sync ticket en attente :", e);
         // On arrête la boucle dès le premier échec : si le réseau est de nouveau
         // coupé, inutile d'essayer les suivants, on retentera plus tard.
         break;
@@ -640,15 +663,15 @@ const Sync = {
 
     this.setStatus('busy');
     try {
-      const ref = await db.collection(TICKETS_COLLECTION).add(payload);
+      const ref = await avecTimeout(db.collection(TICKETS_COLLECTION).add(payload), 5000);
       State.tickets.unshift({ id: ref.id, ...payload });
       this.setStatus('ok');
       return 'ok';
     } catch (e) {
-      // Échec réseau (et non une erreur de données) : on conserve le ticket
-      // localement plutôt que de le perdre, et on retentera dès que la
-      // connexion reviendra.
-      console.error("Erreur sauvegarde ticket, mise en file d'attente locale :", e);
+      // Échec réseau OU timeout (cas hors-ligne où la promesse Firestore ne se
+      // résout/rejette jamais) : on conserve le ticket localement plutôt que
+      // de le perdre, et on retentera dès que la connexion reviendra.
+      console.error("Erreur ou timeout sauvegarde ticket, mise en file d'attente locale :", e);
       const enAttente = FileAttente.ajouter(payload);
       State.tickets.unshift({ id: enAttente.idLocal, ...payload, _enAttente: true });
       this.setStatus('attente');
