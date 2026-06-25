@@ -1779,17 +1779,20 @@ const Export = {
     `).join('');
 
     const ticketsTries = [...d.ticketsJour].sort((a,b) => (a.createdAt||0) - (b.createdAt||0));
-    const lignesDetailTickets = ticketsTries.map(t => {
+    const ligneTicket = (t) => {
       const info = modeInfo(t.mode);
-      return `<tr><td style="padding-left:18px; font-size:12px; color:#6b6258;">${t.heure || ''} — ${info.icone} ${info.label}${t.employe ? ' (' + t.employe + ')' : ''}</td><td style="text-align:right; font-size:12px; color:#6b6258;">${formatMontant(t.montant)}</td></tr>`;
-    }).join('');
+      return `<tr><td style="padding-left:10px; color:#6b6258;">${t.heure || ''} ${info.icone}${t.employe ? ' ' + t.employe.slice(0,4) : ''}</td><td style="text-align:right; color:#6b6258;">${formatMontant(t.montant)}</td></tr>`;
+    };
+    const milieu = Math.ceil(ticketsTries.length / 2);
+    const colonne1 = ticketsTries.slice(0, milieu).map(ligneTicket).join('');
+    const colonne2 = ticketsTries.slice(milieu).map(ligneTicket).join('');
 
     return `
-      <div style="margin-bottom:26px; padding-bottom:20px; border-bottom:2px dashed #c9bfa9;">
-        <h2 style="font-size:17px; color:#163f3e; margin-bottom:10px;">${d.caisse}</h2>
+      <div class="bloc-caisse">
+        <h2>${d.caisse}</h2>
 
         ${d.ouvertures.length === 0 && d.clotures.length === 0 ? `
-          <div style="font-size:13px; color:#6b6258; font-style:italic;">Aucun comptage enregistré ce jour pour cette caisse.</div>
+          <div style="font-size:11px; color:#6b6258; font-style:italic;">Aucun comptage enregistré ce jour pour cette caisse.</div>
         ` : `
           <table class="pdf-table">
             ${ligneOuverture}
@@ -1798,15 +1801,16 @@ const Export = {
         `}
 
         ${d.nbTickets > 0 ? `
-          <div class="section-title" style="margin-top:14px;">Tickets saisis (${d.nbTickets})</div>
+          <div class="section-title">Tickets saisis (${d.nbTickets})</div>
           <table class="pdf-table">
             ${lignesModesTickets}
             <tr style="font-weight:700;"><td>TOTAL TICKETS</td><td style="text-align:right;">${formatMontant(d.totalGeneralTickets)}</td></tr>
           </table>
-          <table class="pdf-table" style="margin-top:6px;">
-            ${lignesDetailTickets}
-          </table>
-        ` : `<div class="helper-text" style="margin-top:10px;">Aucun ticket saisi ce jour pour cette caisse.</div>`}
+          <div class="detail-tickets">
+            <table class="pdf-table">${colonne1}</table>
+            <table class="pdf-table">${colonne2}</table>
+          </div>
+        ` : `<div class="helper-text">Aucun ticket saisi ce jour pour cette caisse.</div>`}
       </div>`;
   },
 
@@ -1829,18 +1833,26 @@ const Export = {
       <meta charset="UTF-8">
       <title>Rapport journalier — ${formatDate(date)}${caisse ? ' — ' + caisse : ''}</title>
       <style>
-        body{font-family:Georgia,'Times New Roman',serif; color:#2A2521; padding:40px; max-width:680px; margin:0 auto;}
-        h1{font-size:22px; margin-bottom:2px; color:#163f3e;}
-        h2{font-family:'Georgia',serif;}
-        .sub{color:#6b6258; font-size:13px; margin-bottom:24px;}
-        table.pdf-table{width:100%; border-collapse:collapse; margin-bottom:8px;}
-        table.pdf-table td{padding:6px 4px; border-bottom:1px solid #e2d9c8; font-size:13.5px;}
-        .section-title{font-size:12px; text-transform:uppercase; letter-spacing:.6px; font-weight:700; color:#1F5C5A; margin:14px 0 6px; border-bottom:2px solid #1F5C5A; padding-bottom:4px;}
-        .total-row{display:flex; justify-content:space-between; padding:12px 0; border-top:2px solid #163f3e; border-bottom:2px solid #163f3e; font-weight:700; font-size:17px; margin-top:14px;}
-        .meta{display:flex; justify-content:space-between; font-size:12px; color:#6b6258; margin-top:20px; border-top:1px solid #e2d9c8; padding-top:10px;}
-        .zone-agrafe{margin-top:30px; padding:30px; border:2px dashed #c9bfa9; border-radius:8px; text-align:center; color:#a89c84; font-size:13px;}
-        .helper-text{font-size:12.5px; color:#6b6258;}
-        @media print{ body{padding:15mm;} .zone-agrafe{page-break-inside:avoid;} }
+        *{box-sizing:border-box;}
+        body{font-family:Georgia,'Times New Roman',serif; color:#2A2521; padding:18px 22px; max-width:680px; margin:0 auto; font-size:12px; line-height:1.3;}
+        h1{font-size:17px; margin:0 0 1px;}
+        h2{font-family:'Georgia',serif; font-size:14px; margin:0 0 5px;}
+        .sub{color:#6b6258; font-size:11px; margin-bottom:10px;}
+        table.pdf-table{width:100%; border-collapse:collapse; margin-bottom:4px;}
+        table.pdf-table td{padding:2px 4px; border-bottom:1px solid #e8e2d4; font-size:11px;}
+        .section-title{font-size:10px; text-transform:uppercase; letter-spacing:.4px; font-weight:700; color:#1F5C5A; margin:8px 0 3px; border-bottom:1.5px solid #1F5C5A; padding-bottom:2px;}
+        .total-row{display:flex; justify-content:space-between; padding:6px 0; border-top:1.5px solid #163f3e; border-bottom:1.5px solid #163f3e; font-weight:700; font-size:13px; margin-top:8px;}
+        .meta{display:flex; justify-content:space-between; font-size:10px; color:#6b6258; margin-top:10px; border-top:1px solid #e8e2d4; padding-top:6px;}
+        .zone-agrafe{margin-top:14px; padding:10px; border:1.5px dashed #c9bfa9; border-radius:6px; text-align:center; color:#a89c84; font-size:10.5px;}
+        .helper-text{font-size:10.5px; color:#6b6258;}
+        .bloc-caisse{margin-bottom:10px; padding-bottom:8px; border-bottom:1.5px dashed #c9bfa9;}
+        .detail-tickets{display:grid; grid-template-columns:1fr 1fr; gap:0 14px;}
+        .detail-tickets table.pdf-table td{font-size:10px; padding:1px 3px;}
+        @media print{
+          body{padding:8mm 10mm; font-size:11px;}
+          .zone-agrafe{page-break-inside:avoid;}
+          .bloc-caisse{page-break-inside:avoid;}
+        }
       </style>
       </head>
       <body>
@@ -1853,7 +1865,7 @@ const Export = {
         <div class="zone-agrafe">📎 Agrafer ici les tickets TPE / relevés de caisse papier de la journée</div>
 
         <div class="meta">
-          <span>Document généré le ${formatDateHeure(Date.now())} par ${State.employeActif ? State.employeActif.nom : '—'}</span>
+          <span>Généré le ${formatDateHeure(Date.now())} par ${State.employeActif ? State.employeActif.nom : '—'}</span>
           <span>La Marmite Bleue</span>
         </div>
 
