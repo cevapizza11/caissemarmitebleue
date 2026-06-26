@@ -2411,6 +2411,36 @@ const Export = {
         <strong>Commentaire :</strong> ${c.commentaire}
       </div>` : '';
 
+    // Tickets de la journée pour cette même caisse et ce même service —
+    // permet d'avoir le détail des ventes par mode de paiement à côté de
+    // l'état de caisse, sans avoir à imprimer un rapport journalier séparé.
+    const totauxTickets = totauxTicketsPour(c.caisse, c.service, c.date);
+    const lignesModesTickets = MODES_PAIEMENT.filter(m => (totauxTickets[m.cle]||0) > 0).map(m => `
+      <tr><td>${m.icone} ${m.label}</td><td style="text-align:right;">${formatMontant(totauxTickets[m.cle])}</td></tr>
+    `).join('');
+    const ticketsTries = State.tickets
+      .filter(t => t.caisse === c.caisse && t.service === c.service && t.date === c.date)
+      .sort((a,b) => (a.createdAt||0) - (b.createdAt||0));
+    const ligneTicketDetail = (t) => {
+      const info = modeInfo(t.mode);
+      return `<tr><td style="padding-left:10px; color:#6b6258;">${t.heure || ''} ${info.icone}${t.employe ? ' ' + t.employe.slice(0,6) : ''}</td><td style="text-align:right; color:#6b6258;">${formatMontant(t.montant)}</td></tr>`;
+    };
+    const milieuTickets = Math.ceil(ticketsTries.length / 2);
+    const colonneTickets1 = ticketsTries.slice(0, milieuTickets).map(ligneTicketDetail).join('');
+    const colonneTickets2 = ticketsTries.slice(milieuTickets).map(ligneTicketDetail).join('');
+
+    const ticketsHtml = (c.type === 'cloture' && totauxTickets.nbTickets > 0) ? `
+      <div class="section-title" style="margin-top:18px;">Tickets saisis (${totauxTickets.nbTickets}) — ${c.service}</div>
+      <table class="pdf-table">
+        ${lignesModesTickets}
+        <tr style="font-weight:700;"><td>TOTAL TICKETS</td><td style="text-align:right;">${formatMontant(totauxTickets.total)}</td></tr>
+      </table>
+      <div class="detail-tickets">
+        <table class="pdf-table">${colonneTickets1}</table>
+        <table class="pdf-table">${colonneTickets2}</table>
+      </div>
+    ` : (c.type === 'cloture' ? `<div class="helper-text" style="margin-top:14px;">Aucun ticket saisi pour cette caisse/service ce jour-là.</div>` : '');
+
     const win = window.open('', '_blank');
     win.document.write(`
       <!DOCTYPE html>
@@ -2427,6 +2457,9 @@ const Export = {
         .section-title{font-size:12px; text-transform:uppercase; letter-spacing:.6px; font-weight:700; color:#1F5C5A; margin:18px 0 6px; border-bottom:2px solid #1F5C5A; padding-bottom:4px;}
         .total-row{display:flex; justify-content:space-between; padding:12px 0; border-top:2px solid #163f3e; border-bottom:2px solid #163f3e; font-weight:700; font-size:17px; margin-top:10px;}
         .meta{display:flex; justify-content:space-between; font-size:12.5px; color:#6b6258; margin-top:30px; border-top:1px solid #e2d9c8; padding-top:10px;}
+        .detail-tickets{display:grid; grid-template-columns:1fr 1fr; gap:0 14px; margin-top:6px;}
+        .detail-tickets table.pdf-table td{font-size:11px; padding:2px 4px;}
+        .helper-text{font-size:12px; color:#6b6258;}
         @media print{ body{padding:15mm;} }
       </style>
       </head>
@@ -2441,6 +2474,7 @@ const Export = {
 
         ${ecartHtml}
         ${ecartCBHtml}
+        ${ticketsHtml}
         ${commentaireHtml}
 
         <div class="meta">
