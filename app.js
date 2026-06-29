@@ -1265,6 +1265,13 @@ function renderEcranTickets() {
     </div>` : ticketsJour.map(t => {
       const info = modeInfo(t.mode);
       const badgeAttente = t._enAttente ? `<span class="hist-badge warn">⏳ en attente</span>` : '';
+      // La suppression est réservée aux admins, SAUF pour un ticket encore en
+      // file d'attente locale (pas encore synchronisé) : l'employé doit
+      // pouvoir corriger sa propre saisie tant qu'elle n'est pas confirmée.
+      const peutSupprimer = estAdmin() || t._enAttente;
+      const boutonSupprimer = peutSupprimer
+        ? `<button class="btn-icon" style="background:var(--ivoire-dark); color:var(--ecart-bad);" onclick="Tickets.supprimer('${t.id}')">✕</button>`
+        : '';
       return `
       <div class="hist-item" style="cursor:default; ${t._enAttente ? 'border-color:var(--ecart-warn); border-style:dashed;' : ''}">
         <div class="hist-main">
@@ -1276,7 +1283,7 @@ function renderEcranTickets() {
             <div class="hist-montant">${formatMontant(t.montant)}</div>
             ${badgeAttente}
           </div>
-          <button class="btn-icon" style="background:var(--ivoire-dark); color:var(--ecart-bad);" onclick="Tickets.supprimer('${t.id}')">✕</button>
+          ${boutonSupprimer}
         </div>
       </div>`;
     }).join('');
@@ -1387,6 +1394,14 @@ const Tickets = {
   },
 
   async supprimer(id) {
+    // Un ticket encore en file d'attente locale (pas encore synchronisé)
+    // peut être supprimé par celui qui l'a saisi, pour corriger une erreur
+    // avant confirmation. Une fois synchronisé, seul un admin peut le faire.
+    const estEnAttente = typeof id === 'string' && id.startsWith('local_');
+    if (!estAdmin() && !estEnAttente) {
+      toast("Seul un administrateur peut supprimer un ticket", true);
+      return;
+    }
     if (!confirm("Supprimer ce ticket ?")) return;
     const ok = await Sync.supprimerTicket(id);
     if (ok) {
