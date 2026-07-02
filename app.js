@@ -40,8 +40,8 @@ const EMPLOYES_DOC = "config/employes";
 /* ================================================================
    SECTION 2 — DÉNOMINATIONS (billets / pièces EUR)
    ================================================================ */
-const BILLETS = [100, 50, 20, 10, 5];
-const PIECES  = [2, 1, 0.5, 0.2, 0.1, 0.05];
+const BILLETS = [500, 200, 100, 50, 20, 10, 5];
+const PIECES  = [2, 1, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01];
 
 // Liste centrale des modes de paiement gérés par l'app. Toute la logique
 // (saisie tickets, rapprochement, écarts, exports) s'appuie sur cette liste
@@ -1729,6 +1729,15 @@ function renderEcranHistorique() {
     const badge = c.ecart !== null && c.ecart !== undefined
       ? `<span class="hist-badge ${statut}">${formatMontantSigne(c.ecart)}</span>`
       : '';
+    // Sur les lignes de clôture, on affiche en teal le montant à déposer
+    // au coffre/banque (= total compté − montant cible du fond de caisse),
+    // pour un repérage immédiat sans avoir à ouvrir le détail.
+    const aDeposer = c.type === 'cloture'
+      ? Math.max(0, (c.total || 0) - State.montantCibleFondCaisse)
+      : null;
+    const badgeDepot = aDeposer !== null
+      ? `<span class="hist-badge" style="background:#eef6f5; color:var(--teal-dark); font-weight:700;">💰 ${formatMontant(aDeposer)}</span>`
+      : '';
     return `
       <div class="hist-item" onclick="Hist.ouvrirDetail('${c.id}')">
         <div class="hist-main">
@@ -1738,6 +1747,7 @@ function renderEcranHistorique() {
         <div class="hist-right">
           <div class="hist-montant">${formatMontant(c.total)}</div>
           ${badge}
+          ${badgeDepot}
         </div>
       </div>`;
   }).join('');
