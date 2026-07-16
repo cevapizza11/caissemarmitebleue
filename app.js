@@ -567,6 +567,24 @@ const Auth = {
       Nav.updateActiveTab(State.currentScreen);
       Render.screen();
       Minuteur.relancer(); // démarre le minuteur d'inactivité après connexion
+      // Recharge silencieusement les données depuis Firestore pour avoir
+      // les tickets, comptages et petite caisse à jour sans rechargement
+      // manuel de la page — particulièrement utile quand plusieurs appareils
+      // utilisent l'app en même temps (un employé saisit des tickets, un
+      // autre se reconnecte et voit les données à jour immédiatement).
+      (async () => {
+        await Sync.chargerComptages();
+        await Sync.chargerTickets();
+        await Sync.chargerPetiteCaisse();
+        // Réinjecte les tickets en attente locale (hors-ligne) dans la liste
+        State.ticketsEnAttente.forEach(item => {
+          if (!State.tickets.find(t => t.id === item.idLocal)) {
+            State.tickets.unshift({ id: item.idLocal, ...item.payload, _enAttente: true });
+          }
+        });
+        Render.screen();
+        FileAttente.tenterSynchronisation();
+      })();
     } else {
       toast("Code incorrect", true);
       this.pinSaisi = "";
